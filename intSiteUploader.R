@@ -56,30 +56,39 @@ if(nrow(alreadyLoaded) > 0){
 }
 
 #assumes at least one sample is loaded into the DB
-currentMaxSampleID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(sampleID) AS sampleID FROM samples;")))
+currentMaxSampleID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(sampleID) FROM samples;")))
 
 metadata$sampleID <- seq(nrow(metadata))+currentMaxSampleID
 
 dbWriteTable(dbConn, "samples", metadata, append=T, row.names=F)
 
 #assumes at least one sample is already loaded into the DB
-currentMaxSiteID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(siteID) AS siteID FROM sites;")))
-currentMaxMultihitID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(multihitID) AS multihitID FROM multihitpositions;")))
+currentMaxSiteID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(siteID) FROM sites;")))
+currentMaxMultihitID <- as.integer(suppressWarnings(dbGetQuery(dbConn, "SELECT MAX(multihitClusterID) FROM sites;")))
 
 for(i in seq(nrow(metadata))){
+  #wipe the variables so we can easily if they exist
+  sites.final <- allSites <- multihitData <- NULL
+
+  #wipe all dataframes so we don't unintentially double-upload
+  sites <- pcrBreakpoints <- multihits <- multihitLengths <- NULL
+
   file <- metadata[i,"sampleName"]
-  if(file.exists(paste0(file, "/sites.final.RData"), paste0(file, "/allSites.RData"))){
-    load(paste0(file, "/sites.final.RData"))
-    load(paste0(file, "/allSites.RData"))
+  files <- c(paste0(file, "/sites.final.RData"),
+             paste0(file, "/allSites.RData"),
+             paste0(file, "/multihitData.RData"))
+  for(file in files[file.exists(files)]){
+    load(file)
+  }
+  if(!is.null(sites.final) & !is.null(allSites)){
     if(length(sites.final)>0){
       #sites.final won't exist if there aren't sites, thus no need to check if sites.final has sites in it
       sites <- data.frame("sampleID"=metadata[i,"sampleID"],
                           "siteID"=seq(length(sites.final))+currentMaxSiteID,
                           "position"=start(flank(sites.final, -1, start=T)),
                           "chr"=as.character(seqnames(sites.final)),
-                          "strand"=as.character(strand(sites.final)))
-
-      currentMaxSiteID <- currentMaxSiteID + nrow(sites)
+                          "strand"=as.character(strand(sites.final)),
+                          "multihitClusterID"=NA)
 
       #Newer versions of intSiteCaller return allSites in the order dictated by
       #sites.final.  This line allows import of 'legacy' output
@@ -96,36 +105,46 @@ for(i in seq(nrow(metadata))){
                                    "breakpoint"=sapply(condensedPCRBreakpoints, "[[", 2),
                                    "count"=runLength(Rle(match(pcrBreakpoints, unique(pcrBreakpoints)))))
 
-      dbWriteTable(dbConn, "sites", sites, append=T, row.names=F) 
-      dbWriteTable(dbConn, "pcrbreakpoints", pcrBreakpoints, append=T, row.names=F)
+      #increment counter
+      currentMaxSiteID <- currentMaxSiteID + nrow(sites)
     }
   }
 
-  if(file.exists(paste0(file, "/multihitData.RData"))){
-    load(paste0(file, "/multihitData.RData"))
-
+  if(!is.null(multihitData)){
     if(length(multihitData[[1]])>0){
       multihitPositions <- multihitData[[2]]
       multihitLengths <- multihitData[[3]]
       stopifnot(length(multihitPositions)==length(multihitLengths))
+      #multihit positions are loaded as sites
       multihitPositions <- data.frame("sampleID"=metadata[i,"sampleID"],
-                                      "multihitID"=rep(seq(length(multihitPositions))+currentMaxMultihitID,
-                                                       sapply(multihitPositions, length)),
+                                      "siteID"=seq(length(unlist(multihitPositions)))+currentMaxSiteID,
                                       "position"=start(flank(unlist(multihitPositions), width=-1, start=TRUE, both=FALSE)),
                                       "chr"=as.character(seqnames(unlist(multihitPositions))),
-                                      "strand"=as.character(strand(unlist(multihitPositions))))
+                                      "strand"=as.character(strand(unlist(multihitPositions))),
+                                      "multihitClusterID"=rep(seq(length(multihitPositions))+currentMaxMultihitID,
+                                                              sapply(multihitPositions, length)))
 
-      multihitLengths <- data.frame("multihitID"=rep(seq(length(multihitLengths))+currentMaxMultihitID,
+      multihitLengths <- data.frame("multihitClusterID"=rep(seq(length(multihitLengths))+currentMaxMultihitID,
                                                      sapply(multihitLengths, nrow)),
                                     "length"=do.call(rbind, multihitLengths)$Var1,
                                     "count"=do.call(rbind, multihitLengths)$Freq)
 
-      currentMaxMultihitID <- currentMaxMultihitID + length(multihitPositions)  
-
-      dbWriteTable(dbConn, "multihitpositions", multihitPositions, append=T, row.names=F)
-      dbWriteTable(dbConn, "multihitlengths", multihitLengths, append=T, row.names=F)
+      #increment counters
+      currentMaxSiteID <- currentMaxSiteID + nrow(multihitPositions)
+      currentMaxMultihitID <- currentMaxMultihitID + length(multihitPositions)
     }
   }
+
+  toWrite <- list("sites"=rbind(sites, multihitPositions),
+                  "pcrbreakpoints"=pcrBreakpoints,
+                  "multihitlengths"=multihitLengths)
+
+  #write out only the ones that exist (i.e. worked)
+  toWrite <- toWrite[!sapply(toWrite, is.null)]
+
+  sapply(seq(length(toWrite)), function(i){
+    dbWriteTable(dbConn, names(toWrite)[i], toWrite[[i]], append=T, row.names=F)
+  })
 }
 
 dbDiscon <- dbDisconnect(dbConn)

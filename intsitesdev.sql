@@ -23,28 +23,10 @@ DROP TABLE IF EXISTS `multihitlengths`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `multihitlengths` (
-  `multihitID` int(11) unsigned NOT NULL,
+  `multihitClusterID` int(11) unsigned NOT NULL,
   `length` int(11) unsigned NOT NULL,
   `count` int(8) unsigned NOT NULL DEFAULT '1',
-  PRIMARY KEY (`multihitID`,`length`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `multihitpositions`
---
-
-DROP TABLE IF EXISTS `multihitpositions`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `multihitpositions` (
-  `multihitID` int(11) unsigned NOT NULL,
-  `sampleID` int(11) unsigned NOT NULL,
-  `position` int(11) unsigned NOT NULL,
-  `chr` varchar(20) NOT NULL DEFAULT '',
-  `strand` char(1) NOT NULL DEFAULT '',
-  PRIMARY KEY (`multihitID`,`position`,`chr`,`strand`),
-  KEY `sampleID` (`sampleID`)
+  KEY `multihitClusterID` (`multihitClusterID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -93,8 +75,10 @@ CREATE TABLE `sites` (
   `position` int(11) unsigned NOT NULL,
   `chr` varchar(20) NOT NULL DEFAULT '',
   `strand` char(1) NOT NULL DEFAULT '',
+  `multihitClusterID` int(11) DEFAULT NULL,
   PRIMARY KEY (`siteID`),
-  KEY `sampleID` (`sampleID`)
+  KEY `sampleID` (`sampleID`),
+  KEY `multihitClusterID` (`multihitClusterID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -111,4 +95,4 @@ CREATE TABLE `sites` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2015-05-29  5:07:32
+-- Dump completed on 2015-05-29 12:00:03
